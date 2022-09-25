@@ -57,11 +57,6 @@ st.sidebar.markdown('Select a player and activity. Statistics plot will appear o
 
 # Titles and text above the pitch
 st.title('Football Game Stats')
-st.markdown("""
-The knockout phase of UEFA Euro 2020 took place between 26 June 2021 and 11 July 2021. It consisted of 
-15 matches between 16 teams successfully qualified from the group stage. In the final game in London Italy 
-won England on penalty kicks and took the trophy second time in their history.
-""")
 st.write("""* Use dropdown-menus on the left side to select a game, team, player, and activity. 
 Statistics plot will appear on the pitch below.""")
 st.write('###', menu_activity, 'Map')
@@ -138,6 +133,62 @@ def heatmap():
     cbar.ax.yaxis.set_tick_params(color='#efefef')
     plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='#efefef')
     return fig, ax
+
+def shot_map():
+    shots = df_events.loc[(df_events['player'] == menu_player) & (df_events['type'] == 'Shot')]
+    location_blocked = shots[shots["shot_outcome"] == "Blocked"]['location'].tolist()
+    blocked_end_location = shots[shots["shot_outcome"] == "Blocked"]['shot_end_location'].tolist()
+    location_goal = shots[shots["shot_outcome"] == "Goal"]['location'].tolist()
+    goal_end_location = shots[shots["shot_outcome"] == "Goal"]['shot_end_location'].tolist()
+    location_on_target = shots[(shots["shot_outcome"] == "Saved") | (shots["shot_outcome"] == "Saved To Post")]['location'].tolist()
+    on_target_end_location = shots[(shots["shot_outcome"] == "Saved") | (shots["shot_outcome"] == "Saved To Post")]['shot_end_location'].tolist()
+    location_off_target = shots[(shots["shot_outcome"] == "Off T") | (shots["shot_outcome"] == "Post") | (shots["shot_outcome"] == "Wayward") | (shots["shot_outcome"] == "Saved Off T")]['location'].tolist()
+    off_target_end_location = shots[(shots["shot_outcome"] == "Off T") | (shots["shot_outcome"] == "Post") | (shots["shot_outcome"] == "Wayward") | (shots["shot_outcome"] == "Saved Off T")]['shot_end_location'].tolist()
+    
+    x1_blocked = pd.Series([el[0] for el in location_blocked])
+    y1_blocked = pd.Series([el[1] for el in location_blocked])
+    x2_blocked = pd.Series([el[0] for el in blocked_end_location])
+    y2_blocked = pd.Series([el[1] for el in blocked_end_location])
+    
+    x1_goal = pd.Series([el[0] for el in location_goal])
+    y1_goal = pd.Series([el[1] for el in location_goal])
+    x2_goal = pd.Series([el[0] for el in goal_end_location])
+    y2_goal = pd.Series([el[1] for el in goal_end_location])
+
+    x1_ont = pd.Series([el[0] for el in location_on_target])
+    y1_ont = pd.Series([el[1] for el in location_on_target])
+    x2_ont = pd.Series([el[0] for el in on_target_end_location])
+    y2_ont = pd.Series([el[1] for el in on_target_end_location])
+    
+    x1_offt = pd.Series([el[0] for el in location_off_target])
+    y1_offt = pd.Series([el[1] for el in location_off_target])
+    x2_offt = pd.Series([el[0] for el in off_target_end_location])
+    y2_offt = pd.Series([el[1] for el in off_target_end_location])
+    
+    # Setup the pitch
+    pitch = Pitch(pitch_type='statsbomb', pitch_color='#FFFFFF', line_color='#000000')
+    fig, ax = pitch.draw(figsize=(12, 8))
+    
+    pitch.arrows(x1_blocked, y1_blocked,
+                 x2_blocked, y2_blocked, width=2,
+                 headwidth=6, headlength=6, color='#F39C12', ax=ax, label='Blocked')
+    
+    pitch.arrows(x1_goal, y1_goal,
+                 x2_goal, y2_goal, width=2,
+                 headwidth=6, headlength=6, color='#F4D03F', ax=ax, label='Goals')
+    
+    pitch.arrows(x1_ont, y1_ont,
+                 x2_ont, y2_ont, width=2,
+                 headwidth=6, headlength=6, color='#3CD74A', ax=ax, label='On target')
+    
+    pitch.arrows(x1_offt, y1_offt,
+                 x2_offt, y2_offt, width=2,
+                 headwidth=6, headlength=6, color='#F31515', ax=ax, label='Off target')
+    
+    # Setup the legend
+    ax.legend(facecolor='#D4DADC', handlelength=5, edgecolor='None', fontsize=14, loc='best')
+   
+    return fig, ax
     
 
 # Get plot function based on selected activity
@@ -145,5 +196,7 @@ if menu_activity == 'Pass':
     fig, ax = pass_map()
 elif menu_activity == "Events Location":
     fig, ax = heatmap()
+elif menu_activity == "Shot":
+    fig, ax = shot_map()
     
 st.pyplot(fig)
