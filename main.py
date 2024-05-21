@@ -59,7 +59,7 @@ st.sidebar.markdown('#### [View source](https://github.com/AlexandreMorel/Footba
 # Titles and text above the pitch
 st.header('Welcome to my Performance Analysis tool!:dart:', divider='red')
 st.write("""* Freshly designed to assess players' individual performance over the course of a match.""")
-st.write("""* Event data have been labelled by StastBomb according to the following [specification](https://github.com/statsbomb/statsbombpy/blob/master/doc/Open%20Data%20Events%20v4.0.0.pdf).""")
+st.write("""* Events data have been labelled by StastBomb according to the following [specification](https://github.com/statsbomb/statsbombpy/blob/master/doc/Open%20Data%20Events%20v4.0.0.pdf).""")
 st.write("""* Use the dropdown-menus on the left sidebar to select a football match, a player, and a statistic to plot.""")
 st.divider()
 st.write('###', menu_activity, 'Map')
@@ -224,8 +224,8 @@ st.download_button(
     mime="image/png",
 )
 
-    # st.success(f"Graphique exporté avec succès en tant que {filename}")
-
 # st.markdown("""
 #     <span title="Message à afficher dans la popup">&#9888;</span>
 # """, unsafe_allow_html=True)
+
+#https://mplsoccer.readthedocs.io/en/latest/gallery/pitch_plots/plot_pass_network.html#sphx-glr-gallery-pitch-plots-plot-pass-network-py
