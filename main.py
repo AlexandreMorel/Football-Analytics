@@ -11,6 +11,7 @@ import pandas as pd
 from mplsoccer import Pitch
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter
+from io import BytesIO
 
 # List of games and JSON files as dictionary
 games_dict = {
@@ -21,13 +22,12 @@ games_dict = {
 games_list = list(games_dict.keys())
 games_id_list = list(games_dict.values())
 
-
 # Set page config
-st.set_page_config(page_title='Football Data Game', page_icon=':soccer:', initial_sidebar_state='expanded')
+st.set_page_config(page_title='Football Data Analysis', page_icon=':soccer:', initial_sidebar_state='expanded')
 
 # Drop-down menu "Select Football Game"
-st.sidebar.markdown('## Select Football Game')
-menu_game = st.sidebar.selectbox('Select Game', games_list, index=0)
+st.sidebar.markdown('## Match Selection')
+menu_game = st.sidebar.selectbox('Select a Match', games_list, index=0)
 
 # Get Statsbomb events data based on selected game
 df_events = sb.events(match_id=games_dict.get(menu_game))
@@ -40,163 +40,192 @@ mask_2 = df_events.loc[df_events['team'] == team_2]
 player_names_1 = mask_1['player'].dropna().unique()
 player_names_2 = mask_2['player'].dropna().unique()
 
-
 # List of activities for drop-down menus
-activities = ['Pass', 'Events Location', 'Ball Receipt', 'Carry', 'Pressure', 'Shot']
-
+activities = ['Passes', 'Shots', 'Heatmap']
 
 # Drop-down menus 'Select Team, Player and Activity'
-st.sidebar.markdown('## Select Player and Activity')
-menu_team = st.sidebar.selectbox('Select Team', (team_1, team_2))
+st.sidebar.markdown('## Player and Statistic selection')
+menu_team = st.sidebar.selectbox('Select a Team', (team_1, team_2))
 if menu_team == team_1:
-    menu_player = st.sidebar.selectbox('Select Player', player_names_1)
+    menu_player = st.sidebar.selectbox('Select a Player', player_names_1)
 else:
-    menu_player = st.sidebar.selectbox('Select Player', player_names_2)
-menu_activity = st.sidebar.selectbox('Select Activity', activities)
-st.sidebar.markdown('Select a player and activity. Statistics plot will appear on the pitch.')
+    menu_player = st.sidebar.selectbox('Select a Player', player_names_2)
+menu_activity = st.sidebar.selectbox('Select a Statistic', activities)
+
+st.sidebar.divider()
+st.sidebar.markdown('### Made with :heart: by [Alexandre Morel](https://fr.linkedin.com/in/alexandre-morel-38590am)')
+st.sidebar.markdown('#### [View source](https://github.com/AlexandreMorel/Football-Analytics):computer:')
 
 # Titles and text above the pitch
-st.title('Football Game Stats')
-st.write("""* Use dropdown-menus on the left side to select a game, team, player, and activity. 
-Statistics plot will appear on the pitch below.""")
+st.header('Welcome to my Performance Analysis tool!:dart:', divider='red')
+st.write("""* Freshly designed to assess players' individual performance over the course of a match.""")
+st.write("""* Event data have been labelled by StastBomb according to the following [specification](https://github.com/statsbomb/statsbombpy/blob/master/doc/Open%20Data%20Events%20v4.0.0.pdf).""")
+st.write("""* Use the dropdown-menus on the left sidebar to select a football match, a player, and a statistic to plot.""")
+st.divider()
 st.write('###', menu_activity, 'Map')
 st.write('###### Game:', menu_game)
 st.write('###### Player:', menu_player, '(', menu_team ,')')
 
-def pass_map():
-    df_pass = df_events.loc[(df_events['player'] == menu_player) & (df_events['type'] == 'Pass')]
+def passes_map(player, df):
+    df_pass = df.loc[(df['player'] == player) & (df['type'] == 'Pass')].dropna(subset=['location', 'pass_end_location'])
     mask_complete = df_pass.pass_outcome.isnull()
-    # Completed passes
-    location = df_pass[mask_complete]['location'].tolist()
-    pass_end_location = df_pass[mask_complete]['pass_end_location'].tolist()
-    x1_completed = pd.Series([el[0] for el in location])
-    y1_completed = pd.Series([el[1] for el in location])
-    x2_completed = pd.Series([el[0] for el in pass_end_location])
-    y2_completed = pd.Series([el[1] for el in pass_end_location])
-    
-    # Other passes
-    location2 = df_pass[~mask_complete]['location'].tolist()
-    pass_end_location2 = df_pass[~mask_complete]['pass_end_location'].tolist()
-    x1_not_completed = pd.Series([el[0] for el in location2])
-    y1_not_completed = pd.Series([el[1] for el in location2])
-    x2_not_completed = pd.Series([el[0] for el in pass_end_location2])
-    y2_not_completed = pd.Series([el[1] for el in pass_end_location2])
-    
-    # Assists
-    location_assist = df_pass[df_pass["pass_goal_assist"] == True]["location"].tolist()
-    pass_end_location_assist = df_pass[df_pass["pass_goal_assist"] == True]["pass_end_location"].tolist()
-    x1_assist = pd.Series([el[0] for el in location_assist])
-    y1_assist = pd.Series([el[1] for el in location_assist])
-    x2_assist = pd.Series([el[0] for el in pass_end_location_assist])
-    y2_assist = pd.Series([el[1] for el in pass_end_location_assist])
-    
+
+    # Créer des séries de données pour chaque type de passe
+    pass_types = {
+        'Completed': df_pass[mask_complete],
+        'Assist': df_pass[df_pass["pass_goal_assist"] == True],
+        'Missed': df_pass[~mask_complete]
+    }
+
+    total_completed_passes = len(pass_types['Completed'])
+    total_missed_passes = len(pass_types['Missed'])
+    percentage_completed_passes = round((total_completed_passes / (total_completed_passes + total_missed_passes)) * 100)
+
     # Setup the pitch
     pitch = Pitch(pitch_type='statsbomb', pitch_color='#FFFFFF', line_color='#000000')
     fig, ax = pitch.draw(figsize=(12, 8))
-    
-    # Plot the completed passes
-    pitch.arrows(x1_completed, y1_completed,
-                 x2_completed, y2_completed, width=2,
-                 headwidth=6, headlength=6, color='#3CD74A', ax=ax, label='Completed passes')
-    
-    pitch.arrows(x1_assist, y1_assist,
-                 x2_assist, y2_assist, width=2,
-                 headwidth=6, headlength=6, color='#F4D03F', ax=ax, label='Assists')
-    
-    # Plot the other passes
-    pitch.arrows(x1_not_completed, y1_not_completed,
-                 x2_not_completed, y2_not_completed, width=2,
-                 headwidth=6, headlength=6, color='#F31515', ax=ax, label='Other passes')
-    
+
+    # Variables pour stocker les totaux des passes vers l'avant
+    forward_passes_completed = 0
+    forward_passes_missed = 0
+
+    # Parcourir chaque type de passe et tracer les flèches correspondantes
+    for label, data in pass_types.items():
+        if not data.empty:
+            location = data['location'].tolist()
+            pass_end_location = data['pass_end_location'].tolist()
+            x1 = pd.Series([el[0] for el in location])
+            y1 = pd.Series([el[1] for el in location])
+            x2 = pd.Series([el[0] for el in pass_end_location])
+            y2 = pd.Series([el[1] for el in pass_end_location])
+            color = '#3CD74A' if label == 'Completed' else '#F4D03F' if label == 'Assist' else '#F31515'
+
+            # Compter le nombre de passes vers l'avant
+            if label == 'Completed':
+                forward_passes_completed += ((x2 > x1)).sum()
+            elif label == 'Missed':
+                forward_passes_missed += ((x2 > x1)).sum()
+
+            pitch.arrows(x1, y1, x2, y2, width=2, headwidth=6, headlength=6, color=color, ax=ax, label=label)
+
+    # Calcul du pourcentage de passes vers l'avant
+    total_forward_passes = forward_passes_completed + forward_passes_missed
+    percentage_forward_passes = round((total_forward_passes / (total_completed_passes + total_missed_passes)) * 100)
+
+    percentage_completed_forward_passes = round(forward_passes_completed / total_forward_passes * 100)
+ 
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Completed passes", f"{total_completed_passes}/{total_completed_passes + total_missed_passes} ({percentage_completed_passes}%)")
+    col2.metric("Completed forward passes", f"{forward_passes_completed}/{total_forward_passes} ({percentage_completed_forward_passes}%)")
+    col3.metric("Forward play", f"{percentage_forward_passes}%")
+
     # Setup the legend
-    ax.legend(facecolor='#D4DADC', handlelength=5, edgecolor='None', fontsize=14, loc='best')
+    ax.legend(facecolor='#D4DADC', handlelength=5, edgecolor='None', fontsize=14, loc='upper left')
     return fig, ax
 
-def heatmap():
-    df_heatmap = df_events.loc[(df_events['player'] == menu_player)]
-    location = [item for item in df_heatmap["location"].tolist() if str(item) != 'nan']
+def heatmap(player, df):
+    # Filtrer les données du joueur spécifié
+    df_heatmap = df.loc[df['player'] == player]
+
+    # Récupérer les coordonnées des emplacements non nuls
+    location = df_heatmap["location"].dropna().tolist()
     x = pd.Series([el[0] for el in location])
     y = pd.Series([el[1] for el in location])
-    
-    # setup pitch
-    pitch = Pitch(pitch_type='statsbomb', line_zorder=2,
-                  pitch_color='#22312b', line_color='#efefef')
-    # draw
+
+    # Setup pitch
+    pitch = Pitch(pitch_type='statsbomb', line_zorder=2, pitch_color='#22312b', line_color='#efefef')
     fig, ax = pitch.draw(figsize=(12, 8))
     fig.set_facecolor('#22312b')
+
+    # Générer la heatmap
     bin_statistic = pitch.bin_statistic(x, y, statistic='count', bins=(25, 25))
     bin_statistic['statistic'] = gaussian_filter(bin_statistic['statistic'], 1)
-    pcm = pitch.heatmap(bin_statistic, ax=ax, cmap='hot', edgecolors='#22312b') #YlOrRd
-    # Add the colorbar and format off-white
+    pcm = pitch.heatmap(bin_statistic, ax=ax, cmap='hot', edgecolors='#22312b')  # YlOrRd
+
+    # Ajouter la barre de couleur et formater en blanc cassé
     cbar = fig.colorbar(pcm, ax=ax, shrink=0.6)
     cbar.outline.set_edgecolor('#efefef')
     cbar.ax.yaxis.set_tick_params(color='#efefef')
     plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='#efefef')
+
     return fig, ax
 
-def shot_map():
-    shots = df_events.loc[(df_events['player'] == menu_player) & (df_events['type'] == 'Shot')]
-    location_blocked = shots[shots["shot_outcome"] == "Blocked"]['location'].tolist()
-    blocked_end_location = shots[shots["shot_outcome"] == "Blocked"]['shot_end_location'].tolist()
-    location_goal = shots[shots["shot_outcome"] == "Goal"]['location'].tolist()
-    goal_end_location = shots[shots["shot_outcome"] == "Goal"]['shot_end_location'].tolist()
-    location_on_target = shots[(shots["shot_outcome"] == "Saved") | (shots["shot_outcome"] == "Saved To Post")]['location'].tolist()
-    on_target_end_location = shots[(shots["shot_outcome"] == "Saved") | (shots["shot_outcome"] == "Saved To Post")]['shot_end_location'].tolist()
-    location_off_target = shots[(shots["shot_outcome"] == "Off T") | (shots["shot_outcome"] == "Post") | (shots["shot_outcome"] == "Wayward") | (shots["shot_outcome"] == "Saved Off T")]['location'].tolist()
-    off_target_end_location = shots[(shots["shot_outcome"] == "Off T") | (shots["shot_outcome"] == "Post") | (shots["shot_outcome"] == "Wayward") | (shots["shot_outcome"] == "Saved Off T")]['shot_end_location'].tolist()
+def shots_map(player, df):
+    # Filtrer les tirs du joueur spécifié
+    shots = df.loc[(df['player'] == player) & (df['type'] == 'Shot')]
     
-    x1_blocked = pd.Series([el[0] for el in location_blocked])
-    y1_blocked = pd.Series([el[1] for el in location_blocked])
-    x2_blocked = pd.Series([el[0] for el in blocked_end_location])
-    y2_blocked = pd.Series([el[1] for el in blocked_end_location])
+    # Définir les différents types de tirs
+    shot_outcomes = {
+        'On target': ['Saved', 'Saved To Post'],
+        'Goal': ['Goal'],
+        'Blocked': ['Blocked'],
+        'Off target': ['Off T', 'Post', 'Wayward', 'Saved Off T']
+    }
     
-    x1_goal = pd.Series([el[0] for el in location_goal])
-    y1_goal = pd.Series([el[1] for el in location_goal])
-    x2_goal = pd.Series([el[0] for el in goal_end_location])
-    y2_goal = pd.Series([el[1] for el in goal_end_location])
+    # Préparer une liste pour stocker les séries de données de chaque type de tir
+    series_to_plot = []
 
-    x1_ont = pd.Series([el[0] for el in location_on_target])
-    y1_ont = pd.Series([el[1] for el in location_on_target])
-    x2_ont = pd.Series([el[0] for el in on_target_end_location])
-    y2_ont = pd.Series([el[1] for el in on_target_end_location])
-    
-    x1_offt = pd.Series([el[0] for el in location_off_target])
-    y1_offt = pd.Series([el[1] for el in location_off_target])
-    x2_offt = pd.Series([el[0] for el in off_target_end_location])
-    y2_offt = pd.Series([el[1] for el in off_target_end_location])
+    # Parcourir les différents types de tirs et stocker les données correspondantes
+    for label, outcomes in shot_outcomes.items():
+        data = shots[shots["shot_outcome"].isin(outcomes)]
+        if not data.empty:
+            location = shots[shots["shot_outcome"].isin(outcomes)]['location'].tolist()
+            end_location = shots[shots["shot_outcome"].isin(outcomes)]['shot_end_location'].tolist()
+            x1 = pd.Series([el[0] for el in location])
+            y1 = pd.Series([el[1] for el in location])
+            x2 = pd.Series([el[0] for el in end_location])
+            y2 = pd.Series([el[1] for el in end_location])
+            color = '#F39C12' if label == 'Blocked' else '#3CD74A' if label == 'Goal' else '#F4D03F' if label == 'On target' else '#F31515'
+            series_to_plot.append((x1, y1, x2, y2, color, label))
+
+    # Calculer la somme des expected goals (xG) pour chaque tir
+    total_xG = shots['shot_statsbomb_xg'].sum()
+    total_goals = len(shots[shots['shot_outcome'] == 'Goal'])
+    # Calculer la différence entre le nombre de buts marqués et la somme des expected goals
+    goal_difference = total_goals - total_xG
+
+    col1, col2 = st.columns(2)
+    col1.metric("Goals", total_goals) 
+    col2.metric("Expected goals (xG)", round(total_xG, 2), round(goal_difference, 2))
     
     # Setup the pitch
     pitch = Pitch(pitch_type='statsbomb', pitch_color='#FFFFFF', line_color='#000000')
     fig, ax = pitch.draw(figsize=(12, 8))
     
-    pitch.arrows(x1_blocked, y1_blocked,
-                 x2_blocked, y2_blocked, width=2,
-                 headwidth=6, headlength=6, color='#F39C12', ax=ax, label='Blocked')
-    
-    pitch.arrows(x1_goal, y1_goal,
-                 x2_goal, y2_goal, width=2,
-                 headwidth=6, headlength=6, color='#F4D03F', ax=ax, label='Goals')
-    
-    pitch.arrows(x1_ont, y1_ont,
-                 x2_ont, y2_ont, width=2,
-                 headwidth=6, headlength=6, color='#3CD74A', ax=ax, label='On target')
-    
-    pitch.arrows(x1_offt, y1_offt,
-                 x2_offt, y2_offt, width=2,
-                 headwidth=6, headlength=6, color='#F31515', ax=ax, label='Off target')
-    
+    # Parcourir la liste et tracer les flèches pour chaque type de tir
+    for x1, y1, x2, y2, color, label in series_to_plot:
+        pitch.arrows(x1, y1, x2, y2, width=2, headwidth=6, headlength=6, color=color, ax=ax, label=label)
+
     # Setup the legend
     ax.legend(facecolor='#D4DADC', handlelength=5, edgecolor='None', fontsize=14, loc='best')
    
-    return fig, ax
-    
+    return fig, ax 
 
 # Get plot function based on selected activity
-if menu_activity == 'Pass':
-    fig, ax = pass_map()
-elif menu_activity == "Events Location":
-    fig, ax = heatmap()
-elif menu_activity == "Shot":
-    fig, ax = shot_map()
+if menu_activity == 'Passes':
+    fig, ax = passes_map(player=menu_player, df=df_events)
+elif menu_activity == "Heatmap":
+    fig, ax = heatmap(player=menu_player, df=df_events)
+elif menu_activity == "Shots":
+    fig, ax = shots_map(player=menu_player, df=df_events)
     
 st.pyplot(fig)
+
+# Sauvegarder le graphique au format PNG
+buffer = BytesIO()
+fig.savefig(buffer, format="png")
+buffer.seek(0)
+
+# Afficher une boîte de dialogue pour télécharger le fichier PNG
+st.download_button(
+    label="Export as PNG",
+    data=buffer,
+    file_name="soccer_plot.png",
+    mime="image/png",
+)
+
+    # st.success(f"Graphique exporté avec succès en tant que {filename}")
+
+# st.markdown("""
+#     <span title="Message à afficher dans la popup">&#9888;</span>
+# """, unsafe_allow_html=True)
