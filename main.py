@@ -62,11 +62,14 @@ st.write("""* Freshly designed to assess players' individual performance over th
 st.write("""* Events data have been labelled by StastBomb according to the following [specification](https://github.com/statsbomb/statsbombpy/blob/master/doc/Open%20Data%20Events%20v4.0.0.pdf).""")
 st.write("""* Use the dropdown-menus on the left sidebar to select a football match, a player, and a statistic to plot.""")
 st.divider()
-st.write('###', menu_activity, 'Map')
+if menu_activity != "Heatmap":
+    st.write('###', menu_activity, 'Map')
+else:
+    st.write('###', menu_activity)
 st.write('###### Game:', menu_game)
 st.write('###### Player:', menu_player, '(', menu_team ,')')
 
-def passes_map(player, df):
+def passes_map(player, df, team, match):
     df_pass = df.loc[(df['player'] == player) & (df['type'] == 'Pass')].dropna(subset=['location', 'pass_end_location'])
     mask_complete = df_pass.pass_outcome.isnull()
 
@@ -83,7 +86,11 @@ def passes_map(player, df):
 
     # Setup the pitch
     pitch = Pitch(pitch_type='statsbomb', pitch_color='#FFFFFF', line_color='#000000')
-    fig, ax = pitch.draw(figsize=(12, 8))
+    fig, axs = pitch.grid(endnote_height=0.03, endnote_space=0, figheight=12,
+                      title_height=0.06, title_space=0, grid_height=0.86,
+                      # Turn off the endnote/title axis. I usually do this after
+                      # I am happy with the chart layout and text placement
+                      axis=False)
 
     # Variables pour stocker les totaux des passes vers l'avant
     forward_passes_completed = 0
@@ -106,7 +113,7 @@ def passes_map(player, df):
             elif label == 'Missed':
                 forward_passes_missed += ((x2 > x1)).sum()
 
-            pitch.arrows(x1, y1, x2, y2, width=2, headwidth=6, headlength=6, color=color, ax=ax, label=label)
+            pitch.arrows(x1, y1, x2, y2, width=2, headwidth=6, headlength=6, color=color, ax=axs['pitch'], label=label)
 
     # Calcul du pourcentage de passes vers l'avant
     total_forward_passes = forward_passes_completed + forward_passes_missed
@@ -120,10 +127,20 @@ def passes_map(player, df):
     col3.metric("Forward play", f"{percentage_forward_passes}%")
 
     # Setup the legend
-    ax.legend(facecolor='#D4DADC', handlelength=5, edgecolor='None', fontsize=14, loc='upper left')
-    return fig, ax
+    axs['pitch'].legend(facecolor='#D4DADC', handlelength=5, edgecolor='None', fontsize=16, loc='upper left')
 
-def heatmap(player, df):
+    # endnote and title
+    axs['endnote'].text(1, 0.5, '@alex.mrl38', va='center', ha='right', fontsize=20, color='#000000')
+    TITLE_TEXT = f'Passes of {player} ({team})'
+    axs['title'].text(0.5, 0.7, TITLE_TEXT, color='#000000',
+                    va='center', ha='center', fontsize=25)
+    axs['title'].text(0.5, 0.25, match, color='#000000',
+                    va='center', ha='center', fontsize=18)
+    
+    return fig, axs
+
+def heatmap(player, df, team, match):
+
     # Filtrer les données du joueur spécifié
     df_heatmap = df.loc[df['player'] == player]
 
@@ -134,23 +151,38 @@ def heatmap(player, df):
 
     # Setup pitch
     pitch = Pitch(pitch_type='statsbomb', line_zorder=2, pitch_color='#22312b', line_color='#efefef')
-    fig, ax = pitch.draw(figsize=(12, 8))
+
+    # Pitch with title
+    fig, axs = pitch.grid(figheight=10, title_height=0.08, endnote_space=0,
+                      grid_width=0.88, left=0.025, title_space=0,
+                      axis=False, grid_height=0.82, endnote_height=0.05)
+    
     fig.set_facecolor('#22312b')
 
     # Générer la heatmap
     bin_statistic = pitch.bin_statistic(x, y, statistic='count', bins=(25, 25))
     bin_statistic['statistic'] = gaussian_filter(bin_statistic['statistic'], 1)
-    pcm = pitch.heatmap(bin_statistic, ax=ax, cmap='hot', edgecolors='#22312b')  # YlOrRd
+    pcm = pitch.heatmap(bin_statistic, ax=axs['pitch'], cmap='hot', edgecolors='#22312b')  # YlOrRd
 
     # Ajouter la barre de couleur et formater en blanc cassé
-    cbar = fig.colorbar(pcm, ax=ax, shrink=0.6)
+    ax_cbar = fig.add_axes((0.915, 0.093, 0.03, 0.786))
+    cbar = plt.colorbar(pcm, cax=ax_cbar)
     cbar.outline.set_edgecolor('#efefef')
     cbar.ax.yaxis.set_tick_params(color='#efefef')
     plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='#efefef')
 
-    return fig, ax
+    # endnote /title
+    axs['endnote'].text(1, 0.5, '@alex.mrl38', color='#ffffff',
+                        va='center', ha='right', fontsize=15)
+    TITLE_TEXT = f'Heatmap of {player} ({team})'
+    axs['title'].text(0.5, 0.7, TITLE_TEXT, color='#ffffff',
+                    va='center', ha='center', fontsize=25)
+    axs['title'].text(0.5, 0.25, match, color='#ffffff',
+                    va='center', ha='center', fontsize=18)
 
-def shots_map(player, df):
+    return fig, axs
+
+def shots_map(player, df, team, match):
     # Filtrer les tirs du joueur spécifié
     shots = df.loc[(df['player'] == player) & (df['type'] == 'Shot')]
     
@@ -190,24 +222,36 @@ def shots_map(player, df):
     
     # Setup the pitch
     pitch = Pitch(pitch_type='statsbomb', pitch_color='#FFFFFF', line_color='#000000')
-    fig, ax = pitch.draw(figsize=(12, 8))
+    fig, axs = pitch.grid(endnote_height=0.03, endnote_space=0, figheight=12,
+                      title_height=0.06, title_space=0, grid_height=0.86,
+                      # Turn off the endnote/title axis. I usually do this after
+                      # I am happy with the chart layout and text placement
+                      axis=False)
     
     # Parcourir la liste et tracer les flèches pour chaque type de tir
     for x1, y1, x2, y2, color, label in series_to_plot:
-        pitch.arrows(x1, y1, x2, y2, width=2, headwidth=6, headlength=6, color=color, ax=ax, label=label)
+        pitch.arrows(x1, y1, x2, y2, width=2, headwidth=6, headlength=6, color=color, ax=axs['pitch'], label=label)
 
     # Setup the legend
-    ax.legend(facecolor='#D4DADC', handlelength=5, edgecolor='None', fontsize=14, loc='best')
-   
-    return fig, ax 
+    axs['pitch'].legend(facecolor='#D4DADC', handlelength=5, edgecolor='None', fontsize=16, loc='upper left')
+
+    # endnote and title
+    axs['endnote'].text(1, 0.5, '@alex.mrl38', va='center', ha='right', fontsize=20, color='#000000')
+    TITLE_TEXT = f'Shots of {player} ({team})'
+    axs['title'].text(0.5, 0.7, TITLE_TEXT, color='#000000',
+                    va='center', ha='center', fontsize=25)
+    axs['title'].text(0.5, 0.25, match, color='#000000',
+                    va='center', ha='center', fontsize=18)
+    
+    return fig, axs 
 
 # Get plot function based on selected activity
 if menu_activity == 'Passes':
-    fig, ax = passes_map(player=menu_player, df=df_events)
+    fig, ax = passes_map(player=menu_player, df=df_events, team=menu_team, match=menu_game)
 elif menu_activity == "Heatmap":
-    fig, ax = heatmap(player=menu_player, df=df_events)
+    fig, ax = heatmap(player=menu_player, df=df_events, team=menu_team, match=menu_game)
 elif menu_activity == "Shots":
-    fig, ax = shots_map(player=menu_player, df=df_events)
+    fig, ax = shots_map(player=menu_player, df=df_events, team=menu_team, match=menu_game)
     
 st.pyplot(fig)
 
@@ -228,4 +272,4 @@ st.download_button(
 #     <span title="Message à afficher dans la popup">&#9888;</span>
 # """, unsafe_allow_html=True)
 
-#https://mplsoccer.readthedocs.io/en/latest/gallery/pitch_plots/plot_pass_network.html#sphx-glr-gallery-pitch-plots-plot-pass-network-py
+#https://mplsoccer.readthedocs.io/en/latest/gallery/pitch_plots/plot_arrows.html#sphx-glr-gallery-pitch-plots-plot-arrows-py
