@@ -35,11 +35,6 @@ if uploaded_file is not None:
             st.error(f"Data Error: {missing_info}")
             st.stop()  # Stop further execution if columns are missing
         else:
-            placeholder = st.empty()
-            placeholder.success("Dataset successfully processed!")
-            time.sleep(2)
-            placeholder.empty()
-            
             # Extraction des équipes et joueurs
             teams_uploaded = df_uploaded['team'].dropna().unique()
             players_uploaded = df_uploaded[df_uploaded['team'] == teams_uploaded[0]]['player'].dropna().unique()
@@ -70,6 +65,7 @@ else:
 
     # Get Statsbomb events data based on selected game
     df_events = sb.events(match_id=games_dict.get(menu_game))
+    df_events.to_json("df_test.json")
 
     # Get teams and players names
     team_1 = df_events['team'].unique()[0]
