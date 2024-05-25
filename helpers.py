@@ -59,7 +59,7 @@ def passes_map(player, df, team, match=None):
     col1, col2, col3 = st.columns(3)
     col1.metric("Completed passes", f"{total_completed_passes}/{total_completed_passes + total_missed_passes} ({percentage_completed_passes}%)")
     col2.metric("Completed forward passes", f"{forward_passes_completed}/{total_forward_passes} ({percentage_completed_forward_passes}%)")
-    col3.metric("Forward play", f"{percentage_forward_passes}%")
+    col3.metric("Forward play", f"{percentage_forward_passes}%", help='The ratio between the total number of forward passes and the total number of passes')
 
     # Setup the legend
     axs['pitch'].legend(facecolor='#D4DADC', handlelength=5, edgecolor='None', fontsize=16, loc='upper left')
