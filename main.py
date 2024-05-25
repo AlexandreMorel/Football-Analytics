@@ -5,52 +5,91 @@ Created on Sun Jun  5 11:39:54 2022
 @author: alexa
 """
 
+import time
 import streamlit as st
 from statsbombpy import sb
-import pandas as pd
-from mplsoccer import Pitch
-import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter
 from io import BytesIO
-
-# List of games and JSON files as dictionary
-games_dict = {
-    'Barcelona - Huesca 4:1 (Round 27)': '3773369',
-    'Barcelona - Real Madrid 1:3 (Round 7)': '3773585'
-}
-
-games_list = list(games_dict.keys())
-games_id_list = list(games_dict.values())
+from helpers import passes_map, heatmap, shots_map, check_required_columns, try_read_json
 
 # Set page config
 st.set_page_config(page_title='Football Data Analysis', page_icon=':soccer:', initial_sidebar_state='expanded')
 
-# Drop-down menu "Select Football Game"
+# Drop-down menu 1
 st.sidebar.markdown('## Match Selection')
-menu_game = st.sidebar.selectbox('Select a Match', games_list, index=0)
 
-# Get Statsbomb events data based on selected game
-df_events = sb.events(match_id=games_dict.get(menu_game))
+# Colonnes nécessaires définies pour les différentes analyses
+required_columns = ['team', 'player', 'location', 
+                    'pass_end_location', 'type', 'pass_outcome', 
+                    'shot_outcome', 'shot_end_location', 'shot_statsbomb_xg']
 
-# Get teams and players names
-team_1 = df_events['team'].unique()[0]
-team_2 = df_events['team'].unique()[1]
-mask_1 = df_events.loc[df_events['team'] == team_1]
-mask_2 = df_events.loc[df_events['team'] == team_2]
-player_names_1 = mask_1['player'].dropna().unique()
-player_names_2 = mask_2['player'].dropna().unique()
+# File upload
+uploaded_file = st.sidebar.file_uploader("Upload your own data", type='json')
+if uploaded_file is not None:
+    df_uploaded = try_read_json(uploaded_file)
 
-# List of activities for drop-down menus
-activities = ['Passes', 'Shots', 'Heatmap']
+    if df_uploaded is not None:
+        # Vérification des colonnes
+        is_valid, missing_info = check_required_columns(df_uploaded, required_columns)
 
-# Drop-down menus 'Select Team, Player and Activity'
-st.sidebar.markdown('## Player and Statistic selection')
-menu_team = st.sidebar.selectbox('Select a Team', (team_1, team_2))
-if menu_team == team_1:
-    menu_player = st.sidebar.selectbox('Select a Player', player_names_1)
-else:
-    menu_player = st.sidebar.selectbox('Select a Player', player_names_2)
-menu_activity = st.sidebar.selectbox('Select a Statistic', activities)
+        if not is_valid:
+            st.error(f"Data Error: {missing_info}")
+            st.stop()  # Stop further execution if columns are missing
+        else:
+            placeholder = st.empty()
+            placeholder.success("Dataset successfully processed!")
+            time.sleep(2)
+            placeholder.empty()
+            
+            # Extraction des équipes et joueurs
+            teams_uploaded = df_uploaded['team'].dropna().unique()
+            players_uploaded = df_uploaded[df_uploaded['team'] == teams_uploaded[0]]['player'].dropna().unique()
+
+            # Choix de l'équipe et du joueur
+            menu_team_uploaded = st.sidebar.selectbox('Select a Team', teams_uploaded)
+            menu_player_uploaded = st.sidebar.selectbox('Select a Player', df_uploaded[df_uploaded['team'] == menu_team_uploaded]['player'].dropna().unique())
+
+            # Données spécifiques pour les graphiques
+            activities_uploaded = ['Passes', 'Shots', 'Heatmap']
+            menu_activity = st.sidebar.selectbox('Select a Statistic', activities_uploaded)
+            df_events = df_uploaded
+            menu_team = menu_team_uploaded
+            menu_player = menu_player_uploaded
+            menu_game = "Uploaded Data" 
+
+else: 
+    # List of games and JSON files as dictionary
+    games_dict = {
+        'Barcelona - Huesca 4:1 (Round 27)': '3773369',
+        'Barcelona - Real Madrid 1:3 (Round 7)': '3773585'
+    }
+
+    games_list = list(games_dict.keys())
+    games_id_list = list(games_dict.values())
+
+    menu_game = st.sidebar.selectbox('Or use our samples data', games_list, index=0)
+
+    # Get Statsbomb events data based on selected game
+    df_events = sb.events(match_id=games_dict.get(menu_game))
+
+    # Get teams and players names
+    team_1 = df_events['team'].unique()[0]
+    team_2 = df_events['team'].unique()[1]
+    mask_1 = df_events.loc[df_events['team'] == team_1]
+    mask_2 = df_events.loc[df_events['team'] == team_2]
+    player_names_1 = mask_1['player'].dropna().unique()
+    player_names_2 = mask_2['player'].dropna().unique()
+
+    # List of activities for drop-down menus
+    activities = ['Passes', 'Shots', 'Heatmap']
+
+    # Drop-down menu 2
+    st.sidebar.markdown('## Player and Statistic selection')
+    menu_team = st.sidebar.selectbox('Select a Team', (team_1, team_2))
+    if menu_team == team_1:
+        menu_player = st.sidebar.selectbox('Select a Player', player_names_1)
+    else:
+        menu_player = st.sidebar.selectbox('Select a Player', player_names_2)
+    menu_activity = st.sidebar.selectbox('Select a Statistic', activities)
 
 st.sidebar.divider()
 st.sidebar.markdown('### Made with :heart: by [Alexandre Morel](https://fr.linkedin.com/in/alexandre-morel-38590am)')
@@ -66,192 +105,26 @@ if menu_activity != "Heatmap":
     st.write('###', menu_activity, 'Map')
 else:
     st.write('###', menu_activity)
-st.write('###### Game:', menu_game)
-st.write('###### Player:', menu_player, '(', menu_team ,')')
-
-def passes_map(player, df, team, match):
-    df_pass = df.loc[(df['player'] == player) & (df['type'] == 'Pass')].dropna(subset=['location', 'pass_end_location'])
-    mask_complete = df_pass.pass_outcome.isnull()
-
-    # Créer des séries de données pour chaque type de passe
-    pass_types = {
-        'Completed': df_pass[mask_complete],
-        'Assist': df_pass[df_pass["pass_goal_assist"] == True],
-        'Missed': df_pass[~mask_complete]
-    }
-
-    total_completed_passes = len(pass_types['Completed'])
-    total_missed_passes = len(pass_types['Missed'])
-    percentage_completed_passes = round((total_completed_passes / (total_completed_passes + total_missed_passes)) * 100)
-
-    # Setup the pitch
-    pitch = Pitch(pitch_type='statsbomb', pitch_color='#FFFFFF', line_color='#000000')
-    fig, axs = pitch.grid(endnote_height=0.03, endnote_space=0, figheight=12,
-                      title_height=0.06, title_space=0, grid_height=0.86,
-                      # Turn off the endnote/title axis. I usually do this after
-                      # I am happy with the chart layout and text placement
-                      axis=False)
-
-    # Variables pour stocker les totaux des passes vers l'avant
-    forward_passes_completed = 0
-    forward_passes_missed = 0
-
-    # Parcourir chaque type de passe et tracer les flèches correspondantes
-    for label, data in pass_types.items():
-        if not data.empty:
-            location = data['location'].tolist()
-            pass_end_location = data['pass_end_location'].tolist()
-            x1 = pd.Series([el[0] for el in location])
-            y1 = pd.Series([el[1] for el in location])
-            x2 = pd.Series([el[0] for el in pass_end_location])
-            y2 = pd.Series([el[1] for el in pass_end_location])
-            color = '#3CD74A' if label == 'Completed' else '#F4D03F' if label == 'Assist' else '#F31515'
-
-            # Compter le nombre de passes vers l'avant
-            if label == 'Completed':
-                forward_passes_completed += ((x2 > x1)).sum()
-            elif label == 'Missed':
-                forward_passes_missed += ((x2 > x1)).sum()
-
-            pitch.arrows(x1, y1, x2, y2, width=2, headwidth=6, headlength=6, color=color, ax=axs['pitch'], label=label)
-
-    # Calcul du pourcentage de passes vers l'avant
-    total_forward_passes = forward_passes_completed + forward_passes_missed
-    percentage_forward_passes = round((total_forward_passes / (total_completed_passes + total_missed_passes)) * 100)
-
-    percentage_completed_forward_passes = round(forward_passes_completed / total_forward_passes * 100)
- 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Completed passes", f"{total_completed_passes}/{total_completed_passes + total_missed_passes} ({percentage_completed_passes}%)")
-    col2.metric("Completed forward passes", f"{forward_passes_completed}/{total_forward_passes} ({percentage_completed_forward_passes}%)")
-    col3.metric("Forward play", f"{percentage_forward_passes}%")
-
-    # Setup the legend
-    axs['pitch'].legend(facecolor='#D4DADC', handlelength=5, edgecolor='None', fontsize=16, loc='upper left')
-
-    # endnote and title
-    axs['endnote'].text(1, 0.5, '@alex.mrl38', va='center', ha='right', fontsize=20, color='#000000')
-    TITLE_TEXT = f'Passes of {player} ({team})'
-    axs['title'].text(0.5, 0.7, TITLE_TEXT, color='#000000',
-                    va='center', ha='center', fontsize=25)
-    axs['title'].text(0.5, 0.25, match, color='#000000',
-                    va='center', ha='center', fontsize=18)
-    
-    return fig, axs
-
-def heatmap(player, df, team, match):
-
-    # Filtrer les données du joueur spécifié
-    df_heatmap = df.loc[df['player'] == player]
-
-    # Récupérer les coordonnées des emplacements non nuls
-    location = df_heatmap["location"].dropna().tolist()
-    x = pd.Series([el[0] for el in location])
-    y = pd.Series([el[1] for el in location])
-
-    # Setup pitch
-    pitch = Pitch(pitch_type='statsbomb', line_zorder=2, pitch_color='#22312b', line_color='#efefef')
-
-    # Pitch with title
-    fig, axs = pitch.grid(figheight=10, title_height=0.08, endnote_space=0,
-                      grid_width=0.88, left=0.025, title_space=0,
-                      axis=False, grid_height=0.82, endnote_height=0.05)
-    
-    fig.set_facecolor('#22312b')
-
-    # Générer la heatmap
-    bin_statistic = pitch.bin_statistic(x, y, statistic='count', bins=(25, 25))
-    bin_statistic['statistic'] = gaussian_filter(bin_statistic['statistic'], 1)
-    pcm = pitch.heatmap(bin_statistic, ax=axs['pitch'], cmap='hot', edgecolors='#22312b')  # YlOrRd
-
-    # Ajouter la barre de couleur et formater en blanc cassé
-    ax_cbar = fig.add_axes((0.915, 0.093, 0.03, 0.786))
-    cbar = plt.colorbar(pcm, cax=ax_cbar)
-    cbar.outline.set_edgecolor('#efefef')
-    cbar.ax.yaxis.set_tick_params(color='#efefef')
-    plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='#efefef')
-
-    # endnote /title
-    axs['endnote'].text(1, 0.5, '@alex.mrl38', color='#ffffff',
-                        va='center', ha='right', fontsize=15)
-    TITLE_TEXT = f'Heatmap of {player} ({team})'
-    axs['title'].text(0.5, 0.7, TITLE_TEXT, color='#ffffff',
-                    va='center', ha='center', fontsize=25)
-    axs['title'].text(0.5, 0.25, match, color='#ffffff',
-                    va='center', ha='center', fontsize=18)
-
-    return fig, axs
-
-def shots_map(player, df, team, match):
-    # Filtrer les tirs du joueur spécifié
-    shots = df.loc[(df['player'] == player) & (df['type'] == 'Shot')]
-    
-    # Définir les différents types de tirs
-    shot_outcomes = {
-        'On target': ['Saved', 'Saved To Post'],
-        'Goal': ['Goal'],
-        'Blocked': ['Blocked'],
-        'Off target': ['Off T', 'Post', 'Wayward', 'Saved Off T']
-    }
-    
-    # Préparer une liste pour stocker les séries de données de chaque type de tir
-    series_to_plot = []
-
-    # Parcourir les différents types de tirs et stocker les données correspondantes
-    for label, outcomes in shot_outcomes.items():
-        data = shots[shots["shot_outcome"].isin(outcomes)]
-        if not data.empty:
-            location = shots[shots["shot_outcome"].isin(outcomes)]['location'].tolist()
-            end_location = shots[shots["shot_outcome"].isin(outcomes)]['shot_end_location'].tolist()
-            x1 = pd.Series([el[0] for el in location])
-            y1 = pd.Series([el[1] for el in location])
-            x2 = pd.Series([el[0] for el in end_location])
-            y2 = pd.Series([el[1] for el in end_location])
-            color = '#F39C12' if label == 'Blocked' else '#3CD74A' if label == 'Goal' else '#F4D03F' if label == 'On target' else '#F31515'
-            series_to_plot.append((x1, y1, x2, y2, color, label))
-
-    # Calculer la somme des expected goals (xG) pour chaque tir
-    total_xG = shots['shot_statsbomb_xg'].sum()
-    total_goals = len(shots[shots['shot_outcome'] == 'Goal'])
-    # Calculer la différence entre le nombre de buts marqués et la somme des expected goals
-    goal_difference = total_goals - total_xG
-
-    col1, col2 = st.columns(2)
-    col1.metric("Goals", total_goals) 
-    col2.metric("Expected goals (xG)", round(total_xG, 2), round(goal_difference, 2))
-    
-    # Setup the pitch
-    pitch = Pitch(pitch_type='statsbomb', pitch_color='#FFFFFF', line_color='#000000')
-    fig, axs = pitch.grid(endnote_height=0.03, endnote_space=0, figheight=12,
-                      title_height=0.06, title_space=0, grid_height=0.86,
-                      # Turn off the endnote/title axis. I usually do this after
-                      # I am happy with the chart layout and text placement
-                      axis=False)
-    
-    # Parcourir la liste et tracer les flèches pour chaque type de tir
-    for x1, y1, x2, y2, color, label in series_to_plot:
-        pitch.arrows(x1, y1, x2, y2, width=2, headwidth=6, headlength=6, color=color, ax=axs['pitch'], label=label)
-
-    # Setup the legend
-    axs['pitch'].legend(facecolor='#D4DADC', handlelength=5, edgecolor='None', fontsize=16, loc='upper left')
-
-    # endnote and title
-    axs['endnote'].text(1, 0.5, '@alex.mrl38', va='center', ha='right', fontsize=20, color='#000000')
-    TITLE_TEXT = f'Shots of {player} ({team})'
-    axs['title'].text(0.5, 0.7, TITLE_TEXT, color='#000000',
-                    va='center', ha='center', fontsize=25)
-    axs['title'].text(0.5, 0.25, match, color='#000000',
-                    va='center', ha='center', fontsize=18)
-    
-    return fig, axs 
+if menu_game != "Uploaded Data": 
+    st.write('###### Match:', menu_game)
+st.write('###### Player:', menu_player, '(', menu_team ,')') 
 
 # Get plot function based on selected activity
 if menu_activity == 'Passes':
-    fig, ax = passes_map(player=menu_player, df=df_events, team=menu_team, match=menu_game)
+    if menu_game != "Uploaded Data": 
+        fig, ax = passes_map(player=menu_player, df=df_events, team=menu_team, match=menu_game)
+    else:
+        fig, ax = passes_map(player=menu_player, df=df_events, team=menu_team)
 elif menu_activity == "Heatmap":
-    fig, ax = heatmap(player=menu_player, df=df_events, team=menu_team, match=menu_game)
+    if menu_game != "Uploaded Data": 
+        fig, ax = heatmap(player=menu_player, df=df_events, team=menu_team, match=menu_game)
+    else:
+        fig, ax = heatmap(player=menu_player, df=df_events, team=menu_team)
 elif menu_activity == "Shots":
-    fig, ax = shots_map(player=menu_player, df=df_events, team=menu_team, match=menu_game)
+    if menu_game != "Uploaded Data":
+        fig, ax = shots_map(player=menu_player, df=df_events, team=menu_team, match=menu_game)
+    else:
+        fig, ax = shots_map(player=menu_player, df=df_events, team=menu_team)
     
 st.pyplot(fig)
 
@@ -267,9 +140,3 @@ st.download_button(
     file_name="soccer_plot.png",
     mime="image/png",
 )
-
-# st.markdown("""
-#     <span title="Message à afficher dans la popup">&#9888;</span>
-# """, unsafe_allow_html=True)
-
-#https://mplsoccer.readthedocs.io/en/latest/gallery/pitch_plots/plot_arrows.html#sphx-glr-gallery-pitch-plots-plot-arrows-py
